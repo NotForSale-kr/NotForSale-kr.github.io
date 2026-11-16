@@ -31,6 +31,8 @@ button{font:inherit;font-size:13px;color:inherit;border:0;background:var(--card)
 .p{text-align:right;font-variant-numeric:tabular-nums}
 .p b{display:block;font-size:19px}
 .p small{font-size:13px}
+.ab{background:none;padding:6px 4px;font-size:17px;line-height:1}
+.ab.off{opacity:.35}
 .up{color:var(--up)}.dn{color:var(--dn)}.fl{color:var(--sub)}
 .inst{display:flex;align-items:center;gap:8px;background:var(--ac);color:#fff;border-radius:16px;padding:12px 12px 12px 14px;margin-bottom:10px;font-size:14px;line-height:1.4}
 .inst b{flex:1;font-weight:600}
@@ -103,6 +105,7 @@ var list = get("list", ["005930","000660","005380","035420","AAPL","NVDA","TSLA"
 var NM = get("nm", {});        // 검색으로 추가한 종목 이름
 var Q = get("q", {});          // 마지막 시세 {코드:{n,p,c,r,usd}}
 var ok = {kr:null, us:null}, at = get("at", 0);
+var ALERT = get("alert", false), AOFF = get("aoff", []), TH = 1;   // 전체 알림, 알림 끈 종목, 1%씩
 function isKRS(c){ return /^\d[0-9A-Z]{5}$/.test(c); }
 function isKR(c){ return isKRS(c) || c === "KOSPI" || c === "KOSDAQ"; }
 function nameOf(c){ var a = KR.concat(US).filter(function(x){ return x[1] === c; })[0]; return a ? a[0] : NM[c] || (Q[c] && Q[c].n) || c; }
@@ -148,7 +151,9 @@ function render(){
   }).join("");
   $("list").innerHTML = list.map(function(c){
     var q = Q[c];
-    return '<div class="row"><div class="n"><b>' + esc(nameOf(c)) + '</b><small>' + (isKR(c) ? c : esc(c) + " · 미국") + '</small></div>'
+    var on = AOFF.indexOf(c) < 0;
+    return '<div class="row">' + (ALERT ? '<button class="ab' + (on ? "" : " off") + '" data-ab="' + esc(c) + '" aria-label="' + esc(nameOf(c)) + ' 알림 ' + (on ? "끄기" : "켜기") + '">' + (on ? "🔔" : "🔕") + '</button>' : "")
+      + '<div class="n"><b>' + esc(nameOf(c)) + '</b><small>' + (isKR(c) ? c : esc(c) + " · 미국") + '</small></div>'
       + '<div class="p"><b>' + (q ? fmtP(c, q.p) : "—") + '</b>' + chg(c) + '</div></div>';
   }).join("") || '<p class="note">[종목]을 눌러 관심종목을 추가하세요</p>';
   status();
@@ -205,7 +210,6 @@ $("done").onclick = function(){ $("dlg").close(); render(); refresh(); if (ALERT
 $("st").onclick = function(){ $("st").textContent = "…"; refresh(); };
 
 // ----- 등락 알림 (전일 종가 대비 ±1%) -----
-var ALERT = get("alert", false), TH = 1;
 var toastT;
 function toast(m){ var t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove("show"); }, 3200); }
 function bellUI(){ $("bell").textContent = ALERT ? "🔔" : "🔕"; $("bell").setAttribute("aria-label", ALERT ? "알림 끄기" : "알림 켜기"); }
@@ -214,9 +218,10 @@ function post(path, body){
   return fetch(API + path, {method:"POST", headers:{"Content-Type":"text/plain"}, body:JSON.stringify(body)})
     .then(function(r){ if (!r.ok) throw 0; return r.json(); });
 }
-function names(){ var o = {}; list.forEach(function(c){ o[c] = nameOf(c); }); return o; }
+function codes(){ return list.filter(function(c){ return AOFF.indexOf(c) < 0; }); }
+function names(){ var o = {}; codes().forEach(function(c){ o[c] = nameOf(c); }); return o; }
 function getSub(){ return navigator.serviceWorker.ready.then(function(reg){ return reg.pushManager.getSubscription(); }); }
-function resync(){ getSub().then(function(s){ if (s) return post("/sub", {sub:s.toJSON(), list:list, names:names(), th:TH}); })["catch"](function(){}); }
+function resync(){ getSub().then(function(s){ if (s) return post("/sub", {sub:s.toJSON(), list:codes(), names:names(), th:TH}); })["catch"](function(){}); }
 function alertOn(){
   if (!API) return toast("시세 서버 연결 후 사용할 수 있어요");
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !window.Notification) {
@@ -231,10 +236,10 @@ function alertOn(){
       return s || r[0].pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64(r[1].key)});
     });
   }).then(function(s){
-    return post("/sub", {sub:s.toJSON(), list:list, names:names(), th:TH, welcome:true});
+    return post("/sub", {sub:s.toJSON(), list:codes(), names:names(), th:TH, welcome:true});
   }).then(function(){
-    ALERT = true; put("alert", true); bellUI();
-    toast("🔔 알림 켜짐 · 관심종목이 전일 종가 대비 ±" + TH + "% 움직이면 알려드려요");
+    ALERT = true; put("alert", true); bellUI(); render();
+    toast("🔔 알림 켜짐 · 전일 종가 대비 " + TH + "%씩 움직일 때마다 알려드려요. 종목 옆 🔔로 종목별로 끌 수 있어요");
   })["catch"](function(e){
     bellUI();
     toast(e === "denied" ? "휴대폰 설정에서 이 앱의 알림을 허용해 주세요" : "알림을 켜지 못했어요. 잠시 후 다시 눌러주세요");
@@ -245,9 +250,17 @@ function alertOff(){
     if (!s) return;
     post("/unsub", {endpoint:s.endpoint})["catch"](function(){});
     return s.unsubscribe();
-  })["catch"](function(){}).then(function(){ ALERT = false; put("alert", false); bellUI(); toast("🔕 알림 꺼짐"); });
+  })["catch"](function(){}).then(function(){ ALERT = false; put("alert", false); bellUI(); render(); toast("🔕 알림 꺼짐"); });
 }
 $("bell").onclick = function(){ ALERT ? alertOff() : alertOn(); };
+$("list").onclick = function(e){
+  var c = e.target.dataset && e.target.dataset.ab; if (!c) return;
+  var i = AOFF.indexOf(c);
+  if (i < 0) AOFF.push(c); else AOFF.splice(i, 1);
+  AOFF = AOFF.filter(function(x){ return list.indexOf(x) >= 0; });
+  put("aoff", AOFF); render(); resync();
+  toast(nameOf(c) + (i < 0 ? " 알림 끔 🔕" : " 알림 켬 🔔"));
+};
 bellUI();
 if (ALERT && "serviceWorker" in navigator) resync();
 
