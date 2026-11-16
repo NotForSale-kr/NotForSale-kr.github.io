@@ -105,7 +105,7 @@ var list = get("list", ["005930","000660","005380","035420","AAPL","NVDA","TSLA"
 var NM = get("nm", {});        // 검색으로 추가한 종목 이름
 var Q = get("q", {});          // 마지막 시세 {코드:{n,p,c,r,usd}}
 var ok = {kr:null, us:null}, at = get("at", 0);
-var ALERT = get("alert", false), AOFF = get("aoff", []), TH = 1;   // 전체 알림, 알림 끈 종목, 1%씩
+var ALERT = get("alert", false), AOFF = get("aoff", []), TH = 5;   // 전체 알림, 알림 끈 종목, 5% 배수마다
 function isKRS(c){ return /^\d[0-9A-Z]{5}$/.test(c); }
 function isKR(c){ return isKRS(c) || c === "KOSPI" || c === "KOSDAQ"; }
 function nameOf(c){ var a = KR.concat(US).filter(function(x){ return x[1] === c; })[0]; return a ? a[0] : NM[c] || (Q[c] && Q[c].n) || c; }
@@ -239,7 +239,7 @@ function alertOn(){
     return post("/sub", {sub:s.toJSON(), list:codes(), names:names(), th:TH, welcome:true});
   }).then(function(){
     ALERT = true; put("alert", true); bellUI(); render();
-    toast("🔔 알림 켜짐 · 전일 종가 대비 " + TH + "%씩 움직일 때마다 알려드려요. 종목 옆 🔔로 종목별로 끌 수 있어요");
+    toast("🔔 알림 켜짐 · 전일 종가 대비 ±" + TH + "%, ±" + TH * 2 + "%… 를 넘나들 때마다 알려드려요. 종목 옆 🔔로 종목별로 끌 수 있어요");
   })["catch"](function(e){
     bellUI();
     toast(e === "denied" ? "휴대폰 설정에서 이 앱의 알림을 허용해 주세요" : "알림을 켜지 못했어요. 잠시 후 다시 눌러주세요");
