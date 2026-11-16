@@ -36,6 +36,8 @@ button{font:inherit;font-size:13px;color:inherit;border:0;background:var(--card)
 .inst b{flex:1;font-weight:600}
 .inst button{background:#fff;color:var(--ac);font-weight:700;font-size:14px}
 .inst .x{background:none;color:#fff;padding:4px 6px}
+#toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:rgba(20,22,28,.94);color:#fff;font-size:13.5px;line-height:1.45;padding:10px 16px;border-radius:14px;max-width:90vw;text-align:center;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9}
+#toast.show{opacity:1}
 .share{display:flex;gap:8px;margin:4px 0 12px}
 .share button{flex:1;padding:12px;font-size:14px;border-radius:14px}
 .by{font-size:12px;font-weight:600;color:var(--sub);text-align:center;margin:18px 0 0;letter-spacing:.03em}
@@ -55,6 +57,7 @@ dialog input{width:100%;border:0;border-radius:12px;padding:12px;font-size:16px;
   <header>
     <h1>주식</h1>
     <button id="st">불러오는 중</button>
+    <button id="bell" aria-label="알림 켜기">🔕</button>
     <button id="edit">종목</button>
   </header>
   <div class="inst" id="inst" hidden><b id="instTxt"></b><button id="instBtn" hidden>설치</button><button class="x" id="instX" aria-label="닫기">✕</button></div>
@@ -67,6 +70,7 @@ dialog input{width:100%;border:0;border-radius:12px;padding:12px;font-size:16px;
   <p class="note" id="note"></p>
   <p class="by">Made by NotForSale</p>
 </div>
+<div id="toast"></div>
 <dialog id="dlg">
   <input id="q" placeholder="종목명, 코드(005930), 미국 티커(AAPL)" autocomplete="off">
   <div id="res"></div>
@@ -197,8 +201,55 @@ $("dlg").onclick = function(e){
   if (d.del) list = list.filter(function(c){ return c !== d.del; });
   if (d.add || d.del) { put("list", list); renderDlg(); }
 };
-$("done").onclick = function(){ $("dlg").close(); render(); refresh(); };
+$("done").onclick = function(){ $("dlg").close(); render(); refresh(); if (ALERT) resync(); };
 $("st").onclick = function(){ $("st").textContent = "…"; refresh(); };
+
+// ----- 등락 알림 (전일 종가 대비 ±1%) -----
+var ALERT = get("alert", false), TH = 1;
+var toastT;
+function toast(m){ var t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove("show"); }, 3200); }
+function bellUI(){ $("bell").textContent = ALERT ? "🔔" : "🔕"; $("bell").setAttribute("aria-label", ALERT ? "알림 끄기" : "알림 켜기"); }
+function b64(s){ s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; return Uint8Array.from(atob(s), function(c){ return c.charCodeAt(0); }); }
+function post(path, body){
+  return fetch(API + path, {method:"POST", headers:{"Content-Type":"text/plain"}, body:JSON.stringify(body)})
+    .then(function(r){ if (!r.ok) throw 0; return r.json(); });
+}
+function names(){ var o = {}; list.forEach(function(c){ o[c] = nameOf(c); }); return o; }
+function getSub(){ return navigator.serviceWorker.ready.then(function(reg){ return reg.pushManager.getSubscription(); }); }
+function resync(){ getSub().then(function(s){ if (s) return post("/sub", {sub:s.toJSON(), list:list, names:names(), th:TH}); })["catch"](function(){}); }
+function alertOn(){
+  if (!API) return toast("시세 서버 연결 후 사용할 수 있어요");
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !window.Notification) {
+    return toast(/iPhone|iPad/.test(navigator.userAgent) ? "아이폰은 홈 화면에 설치한 앱에서만 알림을 받을 수 있어요" : "이 브라우저는 알림을 지원하지 않아요");
+  }
+  $("bell").textContent = "…";
+  Notification.requestPermission().then(function(p){
+    if (p !== "granted") throw "denied";
+    return Promise.all([navigator.serviceWorker.ready, load(API + "/vapid")]);
+  }).then(function(r){
+    return r[0].pushManager.getSubscription().then(function(s){
+      return s || r[0].pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64(r[1].key)});
+    });
+  }).then(function(s){
+    return post("/sub", {sub:s.toJSON(), list:list, names:names(), th:TH, welcome:true});
+  }).then(function(){
+    ALERT = true; put("alert", true); bellUI();
+    toast("🔔 알림 켜짐 · 관심종목이 전일 종가 대비 ±" + TH + "% 움직이면 알려드려요");
+  })["catch"](function(e){
+    bellUI();
+    toast(e === "denied" ? "휴대폰 설정에서 이 앱의 알림을 허용해 주세요" : "알림을 켜지 못했어요. 잠시 후 다시 눌러주세요");
+  });
+}
+function alertOff(){
+  getSub().then(function(s){
+    if (!s) return;
+    post("/unsub", {endpoint:s.endpoint})["catch"](function(){});
+    return s.unsubscribe();
+  })["catch"](function(){}).then(function(){ ALERT = false; put("alert", false); bellUI(); toast("🔕 알림 꺼짐"); });
+}
+$("bell").onclick = function(){ ALERT ? alertOff() : alertOn(); };
+bellUI();
+if (ALERT && "serviceWorker" in navigator) resync();
 
 // ----- 공유 -----
 var APP_URL = /github\.io$/.test(location.host) ? location.origin + location.pathname.replace(/index\.html$/, "") : "https://notforsale-kr.github.io/stock/";
