@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>주식</title>
+<meta name="theme-color" content="#f4f5f7">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--tx:#111;--sub:#777;--ac:#3d5afe;--up:#e5484d;--dn:#2f6fed;--ok:#16a34a}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1b1e24;--tx:#f2f2f2;--sub:#999;--ac:#8796ff;--up:#ff6b6f;--dn:#6c9bff;--ok:#4ade80}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:480px;margin:0 auto;padding:12px 12px 40px}
+header{display:flex;align-items:center;gap:8px;margin:6px 4px 12px}
+h1{flex:1;margin:0;font-size:22px}
+button{font:inherit;font-size:13px;color:inherit;border:0;background:var(--card);border-radius:99px;padding:8px 12px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--sub);margin-right:6px;vertical-align:1px}
+.on{background:var(--ok)}
+.idx{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.ix{background:var(--card);border-radius:14px;padding:10px 12px}
+.ix small{display:block;font-size:12px;color:var(--sub)}
+.ix b{font-size:17px;font-variant-numeric:tabular-nums}
+.ix span{font-size:12px;margin-left:4px}
+.row{display:flex;align-items:center;gap:10px;background:var(--card);border-radius:16px;padding:12px 14px;margin-bottom:8px}
+.n{flex:1;min-width:0}
+.n b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.n small{font-size:12px;color:var(--sub)}
+.p{text-align:right;font-variant-numeric:tabular-nums}
+.p b{display:block;font-size:19px}
+.p small{font-size:13px}
+.up{color:var(--up)}.dn{color:var(--dn)}.fl{color:var(--sub)}
+.inst{display:flex;align-items:center;gap:8px;background:var(--ac);color:#fff;border-radius:16px;padding:12px 12px 12px 14px;margin-bottom:10px;font-size:14px;line-height:1.4}
+.inst b{flex:1;font-weight:600}
+.inst button{background:#fff;color:var(--ac);font-weight:700;font-size:14px}
+.inst .x{background:none;color:#fff;padding:4px 6px}
+.share{display:flex;gap:8px;margin:4px 0 12px}
+.share button{flex:1;padding:12px;font-size:14px;border-radius:14px}
+.by{font-size:12px;font-weight:600;color:var(--sub);text-align:center;margin:18px 0 0;letter-spacing:.03em}
+.note{font-size:11px;color:var(--sub);text-align:center;line-height:1.6}
+dialog{border:0;border-radius:18px;padding:12px;width:min(92vw,420px);max-height:82vh;background:var(--bg);color:var(--tx)}
+dialog input{width:100%;border:0;border-radius:12px;padding:12px;font-size:16px;background:var(--card);color:var(--tx);outline:none;margin-bottom:8px}
+.it{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--card);border-radius:12px;margin-bottom:6px;font-size:15px}
+.it span{flex:1}
+.it small{color:var(--sub);margin-left:4px}
+.it button{background:var(--bg);padding:6px 10px}
+.lbl{font-size:12px;color:var(--sub);margin:10px 4px 6px}
+#done{width:100%;background:var(--ac);color:#fff;font-size:15px;padding:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>주식</h1>
+    <button id="st">불러오는 중</button>
+    <button id="edit">종목</button>
+  </header>
+  <div class="inst" id="inst" hidden><b id="instTxt"></b><button id="instBtn" hidden>설치</button><button class="x" id="instX" aria-label="닫기">✕</button></div>
+  <div class="idx" id="idx"></div>
+  <div id="list"></div>
+  <div class="share">
+    <button id="shareNow">📤 지금 화면 공유</button>
+    <button id="shareApp">🔗 앱 공유</button>
+  </div>
+  <p class="note" id="note"></p>
+  <p class="by">Made by NotForSale</p>
+</div>
+<dialog id="dlg">
+  <input id="q" placeholder="종목명, 코드(005930), 미국 티커(AAPL)" autocomplete="off">
+  <div id="res"></div>
+  <div class="lbl">내 관심종목</div>
+  <div id="mine"></div>
+  <button id="done">완료</button>
+</dialog>
+<script>
+// 시세 중계 서버 주소 (Cloudflare Worker). 비어 있으면 연결 전 상태.
+var API = "https://fx.woong300.workers.dev";
+var KR = [["삼성전자","005930"],["SK하이닉스","000660"],["LG에너지솔루션","373220"],["삼성바이오로직스","207940"],["현대차","005380"],
+  ["삼성전자우","005935"],["기아","000270"],["셀트리온","068270"],["KB금융","105560"],["NAVER","035420"],["신한지주","055550"],
+  ["한화에어로스페이스","012450"],["현대모비스","012330"],["POSCO홀딩스","005490"],["삼성물산","028260"],["카카오","035720"],
+  ["LG화학","051910"],["삼성SDI","006400"],["하나금융지주","086790"],["메리츠금융지주","138040"],["삼성생명","032830"],
+  ["HD현대중공업","329180"],["삼성화재","000810"],["SK이노베이션","096770"],["LG전자","066570"],["두산에너빌리티","034020"],
+  ["HD한국조선해양","009540"],["한국전력","015760"],["우리금융지주","316140"],["SK텔레콤","017670"],["KT","030200"],
+  ["고려아연","010130"],["크래프톤","259960"],["에코프로비엠","247540"],["에코프로","086520"],["알테오젠","196170"],
+  ["HLB","028300"],["삼성중공업","010140"],["한미반도체","042700"],["포스코퓨처엠","003670"],["카카오뱅크","323410"],
+  ["SK스퀘어","402340"],["한화오션","042660"],["대한항공","003490"],["아모레퍼시픽","090430"],["하이브","352820"],
+  ["LG","003550"],["SK","034730"],["삼성전기","009150"],["삼성에스디에스","018260"]];
+var US = [["애플","AAPL"],["마이크로소프트","MSFT"],["엔비디아","NVDA"],["테슬라","TSLA"],["아마존","AMZN"],["알파벳","GOOGL"],
+  ["메타","META"],["브로드컴","AVGO"],["넷플릭스","NFLX"],["팔란티어","PLTR"],["AMD","AMD"],["TSMC","TSM"],
+  ["나스닥100 ETF","QQQ"],["S&P500 ETF","SPY"]];
+var IDX = [["코스피","KOSPI"],["코스닥","KOSDAQ"],["나스닥","^IXIC"],["S&P 500","^GSPC"]];
+
+var $ = function(id){ return document.getElementById(id); };
+function get(k, d){ try { var v = localStorage.getItem("st." + k); return v ? JSON.parse(v) : d; } catch(e){ return d; } }
+function put(k, v){ try { localStorage.setItem("st." + k, JSON.stringify(v)); } catch(e){} }
+var list = get("list", ["005930","000660","005380","035420","AAPL","NVDA","TSLA"]);
+var NM = get("nm", {});        // 검색으로 추가한 종목 이름
+var Q = get("q", {});          // 마지막 시세 {코드:{n,p,c,r,usd}}
+var ok = {kr:null, us:null}, at = get("at", 0);
+function isKRS(c){ return /^\d[0-9A-Z]{5}$/.test(c); }
+function isKR(c){ return isKRS(c) || c === "KOSPI" || c === "KOSDAQ"; }
+function nameOf(c){ var a = KR.concat(US).filter(function(x){ return x[1] === c; })[0]; return a ? a[0] : NM[c] || (Q[c] && Q[c].n) || c; }
+
+// ----- 시세 받기 (중계 서버에 한 번에 요청) -----
+function load(url){
+  return Promise.race([
+    fetch(url, {cache:"no-store"}).then(function(r){ if (!r.ok) throw 0; return r.json(); }),
+    new Promise(function(_, no){ setTimeout(no, 9000); })]);
+}
+var busy = false;
+function refresh(){
+  if (!API || busy) { status(); return; }
+  busy = true;
+  var kr = list.filter(isKRS), us = list.filter(function(c){ return !isKR(c); }).concat(["^IXIC","^GSPC"]);
+  load(API + "/?kr=" + kr.join(",") + "&idx=KOSPI,KOSDAQ&us=" + us.map(encodeURIComponent).join(",")).then(function(j){
+    Object.keys(j.q || {}).forEach(function(k){ Q[k] = j.q[k]; });
+    ok.kr = Object.keys(j.q || {}).some(isKR);
+    ok.us = us.some(function(s){ return j.q && j.q[s]; });
+    at = j.t || Date.now(); put("q", Q); put("at", at);
+  })["catch"](function(){ ok.kr = ok.us = false; }).then(function(){ busy = false; render(); });
+}
+
+// ----- 화면 -----
+function sign(v){ return v > 0 ? "up" : v < 0 ? "dn" : "fl"; }
+function fmtP(c, v){
+  if (!isFinite(v)) return "—";
+  return Q[c] && Q[c].usd ? "$" + v.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2})
+    : v.toLocaleString("en-US", {maximumFractionDigits:0});
+}
+function chg(c){
+  var q = Q[c]; if (!q || !isFinite(q.c)) return '<small class="fl">—</small>';
+  var arrow = q.c > 0 ? "▲" : q.c < 0 ? "▼" : "";
+  var cv = Math.abs(q.c).toLocaleString("en-US", q.usd ? {minimumFractionDigits:2, maximumFractionDigits:2} : {maximumFractionDigits:0});
+  return '<small class="' + sign(q.c) + '">' + arrow + cv + " (" + (q.r > 0 ? "+" : "") + q.r.toFixed(2) + "%)</small>";
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, function(x){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x]; }); }
+function render(){
+  $("idx").innerHTML = IDX.map(function(x){
+    var q = Q[x[1]];
+    return '<div class="ix"><small>' + x[0] + '</small><b>' + (q ? q.p.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2}) : "—") + '</b>'
+      + (q ? '<span class="' + sign(q.c) + '">' + (q.r > 0 ? "+" : "") + q.r.toFixed(2) + '%</span>' : "") + '</div>';
+  }).join("");
+  $("list").innerHTML = list.map(function(c){
+    var q = Q[c];
+    return '<div class="row"><div class="n"><b>' + esc(nameOf(c)) + '</b><small>' + (isKR(c) ? c : esc(c) + " · 미국") + '</small></div>'
+      + '<div class="p"><b>' + (q ? fmtP(c, q.p) : "—") + '</b>' + chg(c) + '</div></div>';
+  }).join("") || '<p class="note">[종목]을 눌러 관심종목을 추가하세요</p>';
+  status();
+}
+function hms(t){ var d = new Date(t); return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0") + ":" + String(d.getSeconds()).padStart(2, "0"); }
+function status(){
+  var fresh = API && Date.now() - at < 60000;
+  $("st").innerHTML = '<i class="dot' + (fresh ? " on" : "") + '"></i>' + (fresh ? "실시간 " + hms(at) : at ? hms(at) + " 기준" : "연결 전");
+  function s(v){ return v === true ? "✅" : v === false ? "❌" : "…"; }
+  $("note").innerHTML = (API ? "국내 시세 " + s(ok.kr) + " · 미국 시세 " + s(ok.us) + " · 15초마다 갱신<br>" : "시세 서버 연결 전이에요<br>")
+    + "상승 빨강 · 하락 파랑 · 미국 주식은 지연 시세일 수 있어요";
+}
+
+// ----- 종목 추가·삭제 (서버 연결 시 전체 종목 검색) -----
+var found = [], timer = null;
+function renderDlg(){
+  var q = $("q").value.trim(), Q2 = q.toUpperCase(), out = [], seen = {};
+  function add(n, c, m){ if (!seen[c] && list.indexOf(c) < 0 && out.length < 12) { seen[c] = 1; out.push([n, c, m || ""]); } }
+  if (q) {
+    found.forEach(function(x){ add(x.n, x.c, x.m); });
+    KR.concat(US).forEach(function(x){ if (x[0].toUpperCase().indexOf(Q2) >= 0 || x[1].indexOf(Q2) === 0) add(x[0], x[1]); });
+    if (isKRS(Q2)) add("코드로 추가", Q2);
+    else if (/^[A-Z][A-Z.\-]{0,9}$/.test(Q2)) add("미국 티커로 추가", Q2);
+  }
+  $("res").innerHTML = out.map(function(x){
+    return '<div class="it"><span>' + esc(x[0]) + '<small>' + esc(x[1]) + (x[2] ? " · " + esc(x[2]) : "") + '</small></span><button data-add="' + esc(x[1]) + '" data-n="' + esc(x[0]) + '">추가</button></div>';
+  }).join("");
+  $("mine").innerHTML = list.map(function(c){
+    return '<div class="it"><span>' + esc(nameOf(c)) + '<small>' + esc(c) + '</small></span><button data-del="' + esc(c) + '">삭제</button></div>';
+  }).join("");
+}
+$("q").oninput = function(){
+  found = []; renderDlg();
+  clearTimeout(timer);
+  var q = $("q").value.trim();
+  if (API && q) timer = setTimeout(function(){
+    load(API + "/search?q=" + encodeURIComponent(q)).then(function(j){
+      if ($("q").value.trim() === q) { found = j.items || []; renderDlg(); }
+    })["catch"](function(){});
+  }, 300);
+};
+$("edit").onclick = function(){ $("q").value = ""; found = []; renderDlg(); $("dlg").showModal(); };
+$("dlg").onclick = function(e){
+  var d = e.target.dataset || {};
+  if (d.add) {
+    list.push(d.add);
+    if (d.n && !/추가$/.test(d.n)) { NM[d.add] = d.n; put("nm", NM); }
+    $("q").value = ""; found = [];
+  }
+  if (d.del) list = list.filter(function(c){ return c !== d.del; });
+  if (d.add || d.del) { put("list", list); renderDlg(); }
+};
+$("done").onclick = function(){ $("dlg").close(); render(); refresh(); };
+$("st").onclick = function(){ $("st").textContent = "…"; refresh(); };
+
+// ----- 공유 -----
+var APP_URL = /github\.io$/.test(location.host) ? location.origin + location.pathname.replace(/index\.html$/, "") : "https://notforsale-kr.github.io/stock/";
+function share(data, btn){
+  var label = btn.textContent;
+  function flash(msg){ btn.textContent = msg; setTimeout(function(){ btn.textContent = label; }, 1800); }
+  if (navigator.share) { navigator.share(data)["catch"](function(){}); return; }
+  var txt = data.text + "\n" + data.url;
+  if (navigator.clipboard) navigator.clipboard.writeText(txt).then(function(){ flash("복사됐어요"); }, function(){ flash("공유가 안 되는 환경이에요"); });
+  else flash("공유가 안 되는 환경이에요");
+}
+function pct(q){ return (q.r > 0 ? "+" : "") + q.r.toFixed(2) + "%"; }
+$("shareNow").onclick = function(){
+  var d = new Date(at || Date.now());
+  var lines = ["[주식] " + (d.getMonth() + 1) + "." + d.getDate() + " " + d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0") + " 기준"];
+  var ix = IDX.filter(function(x){ return Q[x[1]]; }).map(function(x){
+    var q = Q[x[1]]; return x[0] + " " + q.p.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2}) + " (" + pct(q) + ")";
+  });
+  for (var i = 0; i < ix.length; i += 2) lines.push(ix.slice(i, i + 2).join(" · "));
+  list.forEach(function(c){
+    var q = Q[c]; if (!q) return;
+    var arrow = q.c > 0 ? "▲" : q.c < 0 ? "▼" : "";
+    var cv = Math.abs(q.c).toLocaleString("en-US", q.usd ? {minimumFractionDigits:2, maximumFractionDigits:2} : {maximumFractionDigits:0});
+    lines.push(nameOf(c) + " " + fmtP(c, q.p) + " " + arrow + cv + " (" + pct(q) + ")");
+  });
+  share({title:"주식", text:lines.join("\n"), url:APP_URL}, this);
+};
+$("shareApp").onclick = function(){
+  share({title:"주식 시세", text:"관심종목을 한눈에 보는 주식 시세 앱이에요. 링크를 열고 '설치'를 누르면 바로 깔려요.", url:APP_URL}, this);
+};
+
+// ----- 설치 안내 (공유받은 링크로 처음 열었을 때) -----
+var IN_FRAME = window.self !== window.top;
+function inApp(ua){ return /KAKAOTALK/i.test(ua) ? "kakao" : /NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp/i.test(ua) ? "other" : ""; }
+var UA = navigator.userAgent, IA = inApp(UA), deferred = null;
+var INSTALLED = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+if (!INSTALLED && !IN_FRAME && IA === "kakao") location.href = "kakaotalk://web/openExternal?url=" + encodeURIComponent(location.href);
+function showInst(txt, btn){
+  if (INSTALLED || IN_FRAME || get("instX", 0)) return;
+  $("instTxt").textContent = txt; $("instBtn").hidden = !btn; $("inst").hidden = false;
+}
+if (IA) showInst("오른쪽 위 메뉴에서 '다른 브라우저로 열기'를 누르면 앱으로 설치할 수 있어요");
+else if (/iPhone|iPad/.test(UA)) showInst("아래 공유 버튼(□↑) → '홈 화면에 추가'를 누르면 앱으로 설치돼요");
+else if (/SamsungBrowser/.test(UA)) showInst("메뉴(≡) → '페이지 추가' → '홈 화면'을 누르면 앱으로 설치돼요");
+else if (/Android/.test(UA)) setTimeout(function(){ if (!deferred) showInst("메뉴(⋮) → '앱 설치'를 누르면 앱으로 설치돼요"); }, 3000);
+window.addEventListener("beforeinstallprompt", function(e){ e.preventDefault(); deferred = e; showInst("홈 화면에 앱으로 설치할 수 있어요", true); });
+$("instBtn").onclick = function(){ if (deferred) { deferred.prompt(); deferred = null; } $("inst").hidden = true; };
+$("instX").onclick = function(){ $("inst").hidden = true; put("instX", 1); };
+window.addEventListener("appinstalled", function(){ $("inst").hidden = true; });
+
+setInterval(function(){ if (!document.hidden) refresh(); }, 15000);
+setInterval(status, 5000);
+document.addEventListener("visibilitychange", function(){ if (!document.hidden) refresh(); });
+try { if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js")["catch"](function(){}); } catch(e){}
+render();
+refresh();
+</script>
+</body>
+</html>
