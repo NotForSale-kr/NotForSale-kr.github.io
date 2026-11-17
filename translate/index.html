@@ -62,13 +62,14 @@ textarea{display:block;width:100%;min-height:120px;border:0;outline:none;resize:
     <div class="acts">
       <button id="copy">📋 복사</button>
       <button id="speak">🔊 듣기</button>
+      <button id="reply" hidden>✍️ 답장 쓰기</button>
     </div>
   </div>
   <div class="share">
     <button id="shareNow">📤 번역 공유</button>
     <button id="shareApp">🔗 앱 공유</button>
   </div>
-  <p class="note">입력을 멈추면 바로 번역돼요 · AI 번역이라 중요한 내용은 한 번 더 확인하세요</p>
+  <p class="note">입력을 멈추면 바로 번역돼요<br>채팅앱에서 메시지 공유 → '번역'을 고르면 바로 번역돼요<br>AI 번역이라 중요한 내용은 한 번 더 확인하세요</p>
   <p class="by">Made by NotForSale</p>
 </div>
 <div id="toast"></div>
@@ -93,9 +94,39 @@ $("swap").onclick = function(){
   now();
 };
 
+// ----- 언어 자동 감지 (공유·붙여넣기 할 때) -----
+var LATIN = ["en","es","fr","de","vi","id","it","pt"];
+function setLangs(s, t){ src = s; tgt = t; fill($("src"), src); fill($("tgt"), tgt); put("src", src); put("tgt", tgt); }
+function guess(t){
+  function c(re){ return (t.match(re) || []).length; }
+  var n = {ko:c(/[가-힣ㄱ-ㅎㅏ-ㅣ]/g) * 3, kana:c(/[\u3040-\u30ff]/g) * 3, han:c(/[\u4e00-\u9fff]/g) * 3,
+           th:c(/[\u0e00-\u0e7f]/g), ru:c(/[\u0400-\u04ff]/g), lat:c(/[A-Za-z\u00c0-\u024f\u1ea0-\u1ef9]/g)};
+  var best = null, max = 0;
+  for (var k in n) if (n[k] > max) { max = n[k]; best = k; }
+  if (!best) return null;
+  if (best === "kana" || (best === "han" && n.kana)) return "ja";
+  if (best === "han") return "zh";
+  if (best !== "lat") return best;
+  if (/[ăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i.test(t)) return "vi";
+  if (/[¿¡ñ]/i.test(t)) return "es";
+  if (/[ßäöü]/i.test(t)) return "de";
+  if (/[ãõ]/i.test(t)) return "pt";
+  if (/[çœèëîïû]/i.test(t)) return "fr";
+  var f = src !== "ko" ? src : tgt;
+  return LATIN.indexOf(f) >= 0 && f !== "vi" ? f : "en";
+}
+function auto(t){
+  var g = guess(t); if (!g || g === src) return;
+  if (g === "ko") setLangs("ko", src);          // 한글이 들어오면 지금 외국어로
+  else setLangs(g, "ko");                       // 외국어가 들어오면 한국어로
+}
+$("reply").onclick = function(){                // 받은 말을 읽고 → 한글로 답장 쓰기
+  setLangs("ko", src); $("in").value = ""; grow(); go(""); $("in").focus();
+};
+
 // ----- 입력하는 동안 번역 -----
 function grow(){ var t = $("in"); t.style.height = "auto"; t.style.height = Math.max(120, t.scrollHeight) + "px"; $("clear").hidden = !t.value; }
-function show(text, cls){ var o = $("out"); o.textContent = text; o.className = cls || ""; }
+function show(text, cls){ var o = $("out"); o.textContent = text; o.className = cls || ""; $("reply").hidden = !(result && tgt === "ko" && src !== "ko"); }
 function status(t){ $("st").textContent = t || ""; }
 function now(){ clearTimeout(timer); go($("in").value); }
 function go(q){
@@ -118,6 +149,10 @@ function go(q){
   });
 }
 $("in").oninput = function(){ grow(); clearTimeout(timer); var q = this.value; timer = setTimeout(function(){ go(q); }, 450); };
+$("in").onpaste = function(){
+  if (this.value) return;                       // 빈 칸에 붙여넣을 때만 언어 자동 맞춤
+  var t = this; setTimeout(function(){ clearTimeout(timer); auto(t.value); go(t.value); }, 0);
+};
 $("clear").onclick = function(){ $("in").value = ""; grow(); go(""); $("in").focus(); };
 
 // ----- 복사 · 듣기 -----
@@ -177,8 +212,10 @@ $("instX").onclick = function(){ $("inst").hidden = true; put("instX", 1); };
 window.addEventListener("appinstalled", function(){ $("inst").hidden = true; });
 
 try { if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js")["catch"](function(){}); } catch(e){}
-$("in").value = get("q", ""); grow();
-if ($("in").value.trim()) go($("in").value);
+// 다른 앱에서 공유받은 글이 있으면 그걸 번역
+var P = new URLSearchParams(location.search), shared = (P.get("text") || P.get("title") || "").trim();
+if (shared) { history.replaceState(null, "", location.pathname); $("in").value = shared; grow(); auto(shared); go(shared); }
+else { $("in").value = get("q", ""); grow(); if ($("in").value.trim()) go($("in").value); }
 </script>
 </body>
 </html>
