@@ -33,6 +33,15 @@ textarea{display:block;width:100%;min-height:120px;border:0;outline:none;resize:
 .inst b{flex:1;font-weight:600}
 .inst button{background:#fff;color:var(--ac);font-weight:700;font-size:14px}
 .inst .x{background:none;color:#fff;padding:4px 6px}
+.w{border-radius:4px;text-decoration:underline dotted;text-decoration-color:var(--sub);text-underline-offset:5px;text-decoration-thickness:1px}
+.w.on{background:rgba(61,90,254,.15);color:var(--ac)}
+.dict{background:var(--card);border:1.5px solid var(--ac);border-radius:18px;padding:12px 14px 14px 16px;margin-bottom:10px}
+.dict .hd{display:flex;align-items:center;gap:6px}
+.dict .hd b{flex:1;font-size:17px;word-break:break-word}
+.dict .hd small{color:var(--sub);font-weight:400;font-size:13px;margin-left:6px}
+.dict .hd button{background:var(--bg);padding:6px 10px}
+.dict .mean{font-size:20px;font-weight:700;margin:6px 0 2px}
+.dict .more{font-size:14px;color:var(--sub);line-height:1.5}
 .share{display:flex;gap:8px;margin:4px 0 12px}
 .share button{flex:1;padding:12px;font-size:14px;border-radius:14px}
 .note{font-size:11px;color:var(--sub);text-align:center;line-height:1.6}
@@ -65,11 +74,16 @@ textarea{display:block;width:100%;min-height:120px;border:0;outline:none;resize:
       <button id="reply" hidden>✍️ 답장 쓰기</button>
     </div>
   </div>
+  <div class="dict" id="dict" hidden>
+    <div class="hd"><b id="dW"></b><button id="dSpeak" aria-label="단어 듣기">🔊</button><button id="dX" aria-label="닫기">✕</button></div>
+    <div class="mean" id="dMean"></div>
+    <div class="more" id="dMore"></div>
+  </div>
   <div class="share">
     <button id="shareNow">📤 번역 공유</button>
     <button id="shareApp">🔗 앱 공유</button>
   </div>
-  <p class="note">입력을 멈추면 바로 번역돼요<br>채팅앱에서 메시지 공유 → '번역'을 고르면 바로 번역돼요<br>AI 번역이라 중요한 내용은 한 번 더 확인하세요</p>
+  <p class="note">입력을 멈추면 바로 번역돼요 · 영어 단어를 누르면 뜻이 나와요<br>채팅앱에서 메시지 공유 → '번역'을 고르면 바로 번역돼요<br>AI 번역이라 중요한 내용은 한 번 더 확인하세요</p>
   <p class="by">Made by NotForSale</p>
 </div>
 <div id="toast"></div>
@@ -124,13 +138,69 @@ $("reply").onclick = function(){                // 받은 말을 읽고 → 한�
   setLangs("ko", src); $("in").value = ""; grow(); go(""); $("in").focus();
 };
 
+// ----- 단어 뜻: 영어 등 단어를 누르면 아래에 한국어 뜻 -----
+var WORDY = ["en","es","fr","de","vi","id","it","pt","ru"];
+var LET = "A-Za-z\u00c0-\u024f\u1e00-\u1eff\u0400-\u04ff";
+var WSPLIT = new RegExp("([" + LET + "]+(?:['’\\-][" + LET + "]+)*)");
+var dcache = {}, dseq = 0, dside = "", dword = "", dlang = "";
+function words(el, text){
+  el.textContent = "";
+  text.split(WSPLIT).forEach(function(part, i){
+    if (!part) return;
+    if (i % 2) { var sp = document.createElement("span"); sp.className = "w"; sp.textContent = part; el.appendChild(sp); }
+    else el.appendChild(document.createTextNode(part));
+  });
+}
+function unmark(){ var on = document.querySelector(".w.on"); if (on) on.classList.remove("on"); }
+function dictHide(){ $("dict").hidden = true; dside = ""; dseq++; unmark(); }
+function lookup(w, ctx, lang, side){
+  (side === "in" ? $("in") : $("out")).parentNode.insertAdjacentElement("afterend", $("dict"));
+  dside = side; dword = w; dlang = lang;
+  $("dW").textContent = w; $("dMean").textContent = "찾는 중…"; $("dMore").textContent = ""; $("dict").hidden = false;
+  var key = lang + "|" + w.toLowerCase() + "|" + ctx;
+  if (dcache[key]) return dshow(dcache[key]);
+  var my = ++dseq;
+  Promise.race([
+    fetch(API + "/define", {method:"POST", headers:{"Content-Type":"text/plain"}, body:JSON.stringify({w:w, ctx:ctx, lang:lang})}).then(function(r){ return r.json(); }),
+    new Promise(function(_, no){ setTimeout(function(){ no("timeout"); }, 15000); })
+  ]).then(function(j){
+    if (my !== dseq) return;
+    if (j.error || !j.mean) { $("dMean").textContent = j.error === "limit" ? "오늘 무료 사용량을 다 썼어요" : "뜻을 못 찾았어요"; return; }
+    dcache[key] = j; dshow(j);
+  })["catch"](function(){ if (my === dseq) $("dMean").textContent = "인터넷 연결을 확인해 주세요"; });
+}
+function dshow(j){
+  var b = $("dW"); b.textContent = j.w;
+  if (j.base && j.base.toLowerCase() !== j.w.toLowerCase()) b.textContent += " → " + j.base;
+  if (j.pos) { var sm = document.createElement("small"); sm.textContent = j.pos; b.appendChild(sm); }
+  dword = j.base || j.w;
+  $("dMean").textContent = j.mean; $("dMore").textContent = j.more ? "다른 뜻: " + j.more : "";
+}
+$("out").onclick = function(e){
+  var t = e.target; if (!t.classList || !t.classList.contains("w")) return;
+  unmark(); t.classList.add("on"); lookup(t.textContent, result, tgt, "out");
+};
+$("in").addEventListener("click", function(){                // 입력칸의 외국어 단어를 눌러도
+  if (WORDY.indexOf(src) < 0 || this.selectionStart !== this.selectionEnd) return;
+  var v = this.value, i = this.selectionStart;
+  var L = v.slice(0, i).match(new RegExp("[" + LET + "'’\\-]*$"))[0], R = v.slice(i).match(new RegExp("^[" + LET + "'’\\-]*"))[0];
+  var w = (L + R).replace(/^['’\-]+|['’\-]+$/g, "");
+  if (!new RegExp("[" + LET + "]").test(w)) return;
+  unmark(); lookup(w, v.slice(Math.max(0, i - 150), i + 150), src, "in");
+});
+$("dX").onclick = dictHide;
+if (!("speechSynthesis" in window)) $("dSpeak").hidden = true;
+$("dSpeak").onclick = function(){
+  try { speechSynthesis.cancel(); var u = new SpeechSynthesisUtterance(dword); u.lang = LANGS.filter(function(l){ return l[0] === dlang; })[0][2]; u.rate = 0.85; speechSynthesis.speak(u); } catch(e){}
+};
+
 // ----- 입력하는 동안 번역 -----
 function grow(){ var t = $("in"); t.style.height = "auto"; t.style.height = Math.max(120, t.scrollHeight) + "px"; $("clear").hidden = !t.value; }
-function show(text, cls){ var o = $("out"); o.textContent = text; o.className = cls || ""; $("reply").hidden = !(result && tgt === "ko" && src !== "ko"); }
+function show(text, cls){ var o = $("out"); if (!cls && WORDY.indexOf(tgt) >= 0) words(o, text); else o.textContent = text; o.className = cls || ""; if (dside === "out") dictHide(); $("reply").hidden = !(result && tgt === "ko" && src !== "ko"); }
 function status(t){ $("st").textContent = t || ""; }
 function now(){ clearTimeout(timer); go($("in").value); }
 function go(q){
-  put("q", q);
+  put("q", q); dictHide();
   if (!q.trim()) { result = ""; seq++; status(""); show("번역 결과가 여기에 바로 나와요", "ph"); return; }
   var key = src + ">" + tgt + ":" + q;
   if (cache[key] != null) { result = cache[key]; show(result); status(""); return; }
@@ -148,7 +218,7 @@ function go(q){
     status(""); result = ""; show("인터넷 연결을 확인해 주세요", "err");
   });
 }
-$("in").oninput = function(){ grow(); clearTimeout(timer); var q = this.value; timer = setTimeout(function(){ go(q); }, 450); };
+$("in").oninput = function(){ grow(); dictHide(); clearTimeout(timer); var q = this.value; timer = setTimeout(function(){ go(q); }, 450); };
 $("in").onpaste = function(){
   if (this.value) return;                       // 빈 칸에 붙여넣을 때만 언어 자동 맞춤
   var t = this; setTimeout(function(){ clearTimeout(timer); auto(t.value); go(t.value); }, 0);
